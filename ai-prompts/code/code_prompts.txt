@@ -1,0 +1,6 @@
+1. The following are Go files given as part of an implementation of the game of life as explained in the introduction. Help me understand how to skeleton code is structured and key functions and code chunks i should be aware of and how they work (syntactically and logically).
+
+        Files Attached:
+            - brief.txt (Project introduction)
+            - All go files as txt except for test files.
+
