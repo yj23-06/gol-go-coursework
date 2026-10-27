@@ -8,14 +8,14 @@ import (
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
-type distributorChannels struct {
-	events     chan<- Event
-	ioCommand  chan<- ioCommand
-	ioIdle     <-chan bool
-	ioFilename chan<- string
-	ioOutput   chan<- uint8
-	ioInput    <-chan uint8
-	keyPresses <-chan rune
+type DistributorChannels struct {
+	Events     chan<- Event
+	IoCommand  chan<- IoCommand
+	IoIdle     <-chan bool
+	IoFilename chan<- string
+	IoOutput   chan<- uint8
+	IoInput    <-chan uint8
+	KeyPresses <-chan rune
 }
 
 type WorkerResult struct {
@@ -23,7 +23,7 @@ type WorkerResult struct {
 }
 
 // distributor divides the work between workers and interacts with other goroutines.
-func distributor(p Params, c distributorChannels) {
+func distributor(p Params, c DistributorChannels) {
 	// Create a 2D slice to store the world.
 	world := make([][]uint8, p.ImageHeight)
 	for i := range world {
@@ -33,14 +33,14 @@ func distributor(p Params, c distributorChannels) {
 	turn := 0
 
 	// Load the initial PGM image
-	c.ioCommand <- ioInput
-	c.ioFilename <- fmt.Sprintf("%dx%d", p.ImageWidth, p.ImageHeight)
+	c.IoCommand <- IoInput
+	c.IoFilename <- fmt.Sprintf("%dx%d", p.ImageWidth, p.ImageHeight)
 
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {
-			world[y][x] = <-c.ioInput
+			world[y][x] = <-c.IoInput
 			if world[y][x] == 255 {
-				c.events <- CellFlipped{
+				c.Events <- CellFlipped{
 					CompletedTurns: 0,
 					Cell:           util.Cell{X: x, Y: y},
 				}
@@ -48,7 +48,7 @@ func distributor(p Params, c distributorChannels) {
 		}
 	}
 
-	c.events <- StateChange{turn, Executing}
+	c.Events <- StateChange{turn, Executing}
 
 	// Ticker setup for reporting alive cell counts every 2 seconds
 	var completedTurns int
@@ -72,7 +72,7 @@ func distributor(p Params, c distributorChannels) {
 				}
 				turns := completedTurns
 				mutex.RUnlock()
-				c.events <- AliveCellsCount{
+				c.Events <- AliveCellsCount{
 					CompletedTurns: turns,
 					CellsCount:     alive,
 				}
@@ -87,24 +87,24 @@ func distributor(p Params, c distributorChannels) {
 	// Execute turns with interactive keypress handling via select
 	for turn < p.Turns {
 		select {
-		case key := <-c.keyPresses:
+		case key := <-c.KeyPresses:
 			switch key {
 			case 'p':
-				c.events <- StateChange{CompletedTurns: turn, NewState: Paused}
+				c.Events <- StateChange{CompletedTurns: turn, NewState: Paused}
 				paused := true
 				for paused {
-					k := <-c.keyPresses
+					k := <-c.KeyPresses
 					switch k {
 					case 'p':
-						c.events <- StateChange{CompletedTurns: turn, NewState: Executing}
+						c.Events <- StateChange{CompletedTurns: turn, NewState: Executing}
 						paused = false
 					case 's':
 						mutex.RLock()
-						saveWorld(world, turn, p, c)
+						SaveWorld(world, turn, p, c)
 						mutex.RUnlock()
 					case 'q':
 						mutex.RLock()
-						saveWorld(world, turn, p, c)
+						SaveWorld(world, turn, p, c)
 						var aliveCells []util.Cell
 						for y := 0; y < p.ImageHeight; y++ {
 							for x := 0; x < p.ImageWidth; x++ {
@@ -115,9 +115,9 @@ func distributor(p Params, c distributorChannels) {
 						}
 						mutex.RUnlock()
 						close(done)
-						c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: aliveCells}
-						c.events <- StateChange{CompletedTurns: turn, NewState: Quitting}
-						close(c.events)
+						c.Events <- FinalTurnComplete{CompletedTurns: turn, Alive: aliveCells}
+						c.Events <- StateChange{CompletedTurns: turn, NewState: Quitting}
+						close(c.Events)
 						return
 					case 'k':
 						mutex.RLock()
@@ -131,19 +131,19 @@ func distributor(p Params, c distributorChannels) {
 						}
 						mutex.RUnlock()
 						close(done)
-						c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: aliveCells}
-						c.events <- StateChange{CompletedTurns: turn, NewState: Quitting}
-						close(c.events)
+						c.Events <- FinalTurnComplete{CompletedTurns: turn, Alive: aliveCells}
+						c.Events <- StateChange{CompletedTurns: turn, NewState: Quitting}
+						close(c.Events)
 						return
 					}
 				}
 			case 's':
 				mutex.RLock()
-				saveWorld(world, turn, p, c)
+				SaveWorld(world, turn, p, c)
 				mutex.RUnlock()
 			case 'q':
 				mutex.RLock()
-				saveWorld(world, turn, p, c)
+				SaveWorld(world, turn, p, c)
 				var aliveCells []util.Cell
 				for y := 0; y < p.ImageHeight; y++ {
 					for x := 0; x < p.ImageWidth; x++ {
@@ -154,9 +154,9 @@ func distributor(p Params, c distributorChannels) {
 				}
 				mutex.RUnlock()
 				close(done)
-				c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: aliveCells}
-				c.events <- StateChange{CompletedTurns: turn, NewState: Quitting}
-				close(c.events)
+				c.Events <- FinalTurnComplete{CompletedTurns: turn, Alive: aliveCells}
+				c.Events <- StateChange{CompletedTurns: turn, NewState: Quitting}
+				close(c.Events)
 				return
 			case 'k':
 				mutex.RLock()
@@ -170,9 +170,9 @@ func distributor(p Params, c distributorChannels) {
 				}
 				mutex.RUnlock()
 				close(done)
-				c.events <- FinalTurnComplete{CompletedTurns: turn, Alive: aliveCells}
-				c.events <- StateChange{CompletedTurns: turn, NewState: Quitting}
-				close(c.events)
+				c.Events <- FinalTurnComplete{CompletedTurns: turn, Alive: aliveCells}
+				c.Events <- StateChange{CompletedTurns: turn, NewState: Quitting}
+				close(c.Events)
 				return
 			}
 		default:
@@ -207,7 +207,7 @@ func distributor(p Params, c distributorChannels) {
 			}
 
 			if len(allFlipped) > 0 {
-				c.events <- CellsFlipped{
+				c.Events <- CellsFlipped{
 					CompletedTurns: turn,
 					Cells:          allFlipped,
 				}
@@ -219,7 +219,7 @@ func distributor(p Params, c distributorChannels) {
 			mutex.Unlock()
 
 			turn++
-			c.events <- TurnComplete{
+			c.Events <- TurnComplete{
 				CompletedTurns: turn,
 			}
 		}
@@ -230,7 +230,7 @@ func distributor(p Params, c distributorChannels) {
 
 	// Save the final state as a PGM image before finishing
 	mutex.RLock()
-	saveWorld(world, p.Turns, p, c)
+	SaveWorld(world, p.Turns, p, c)
 
 	// Report the final state using FinalTurnComplete Event.
 	var aliveCells []util.Cell
@@ -243,44 +243,44 @@ func distributor(p Params, c distributorChannels) {
 	}
 	mutex.RUnlock()
 
-	c.events <- FinalTurnComplete{
+	c.Events <- FinalTurnComplete{
 		CompletedTurns: p.Turns,
 		Alive:          aliveCells,
 	}
 
 	// Make sure that the IO has finished any output before exiting.
-	c.ioCommand <- ioCheckIdle
-	<-c.ioIdle
+	c.IoCommand <- IoCheckIdle
+	<-c.IoIdle
 
-	c.events <- StateChange{p.Turns, Quitting}
+	c.Events <- StateChange{p.Turns, Quitting}
 
 	// Close the channel to stop the SDL goroutine gracefully.
-	close(c.events)
+	close(c.Events)
 }
 
-func saveWorld(
+func SaveWorld(
 	world [][]uint8,
 	turn int,
 	p Params,
-	c distributorChannels,
+	c DistributorChannels,
 ) {
 	filename := fmt.Sprintf("%dx%dx%d",
 		p.ImageWidth,
 		p.ImageHeight,
 		turn,
 	)
-	c.ioCommand <- ioOutput
-	c.ioFilename <- filename
+	c.IoCommand <- IoOutput
+	c.IoFilename <- filename
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {
-			c.ioOutput <- world[y][x]
+			c.IoOutput <- world[y][x]
 		}
 	}
 	// Ensure IO has finished writing before reporting completion
-	c.ioCommand <- ioCheckIdle
-	<-c.ioIdle
+	c.IoCommand <- IoCheckIdle
+	<-c.IoIdle
 
-	c.events <- ImageOutputComplete{
+	c.Events <- ImageOutputComplete{
 		CompletedTurns: turn,
 		Filename:       filename,
 	}
@@ -296,7 +296,7 @@ func worker(
 	var flipped []util.Cell
 	for y := startY; y < endY; y++ {
 		for x := 0; x < width; x++ {
-			neighbours := countNeighbours(
+			neighbours := CountNeighbours(
 				world,
 				x,
 				y,
@@ -323,7 +323,7 @@ func worker(
 	}
 }
 
-func countNeighbours(world [][]uint8, x, y, width, height int) int {
+func CountNeighbours(world [][]uint8, x, y, width, height int) int {
 	count := 0
 	for dy := -1; dy <= 1; dy++ {
 		for dx := -1; dx <= 1; dx++ {

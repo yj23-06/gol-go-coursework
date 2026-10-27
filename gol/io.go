@@ -11,7 +11,7 @@ import (
 )
 
 type ioChannels struct {
-	command <-chan ioCommand
+	command <-chan IoCommand
 	idle    chan<- bool
 
 	filename <-chan string
@@ -26,7 +26,7 @@ type ioState struct {
 }
 
 // ioCommand allows requesting behaviour from the io (pgm) goroutine.
-type ioCommand uint8
+type IoCommand uint8
 
 // This is a way of creating enums in Go.
 // It will evaluate to:
@@ -35,9 +35,9 @@ type ioCommand uint8
 //	ioInput 	= 1
 //	ioCheckIdle = 2
 const (
-	ioOutput ioCommand = iota
-	ioInput
-	ioCheckIdle
+	IoOutput IoCommand = iota
+	IoInput
+	IoCheckIdle
 )
 
 // writePgmImage receives an array of bytes and writes it to a pgm file.
@@ -134,11 +134,11 @@ func startIo(p Params, c ioChannels) {
 	for command := range io.channels.command {
 		// Block and wait for requests from the distributor
 		switch command {
-		case ioInput:
+		case IoInput:
 			io.readPgmImage()
-		case ioOutput:
+		case IoOutput:
 			io.writePgmImage()
-		case ioCheckIdle:
+		case IoCheckIdle:
 			io.channels.idle <- true
 		}
 	}
