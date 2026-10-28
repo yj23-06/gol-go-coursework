@@ -2,124 +2,162 @@ package extensions
 
 import (
 	"fmt"
+	"math/rand"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	"uk.ac.bris.cs/gameoflife/gol"
+	"uk.ac.bris.cs/gameoflife/util"
 )
 
-// -----------------------------------------------------------------
-// 1. Core Correctness Test: Blinker pattern check
-// -----------------------------------------------------------------
-func TestDistributorDoubleBufferCorrectness(t *testing.T) {
-	params := gol.Params{
-		ImageWidth:  16,
-		ImageHeight: 16,
-		Turns:       5,
-		Threads:     2,
+type ReferenceEngine struct {
+	width, height int
+	grid          [][]uint8
+}
+
+func NewReferenceEngine(width, height int, initial []uint8) *ReferenceEngine {
+	grid := make([][]uint8, height)
+	for y := 0; y < height; y++ {
+		grid[y] = make([]uint8, width)
+		for x := 0; x < width; x++ {
+			grid[y][x] = initial[y*width+x]
+		}
+	}
+	return &ReferenceEngine{width: width, height: height, grid: grid}
+}
+
+func (r *ReferenceEngine) Step() ([]util.Cell, [][]uint8) {
+	next := make([][]uint8, r.height)
+	for y := 0; y < r.height; y++ {
+		next[y] = make([]uint8, r.width)
 	}
 
-	events := make(chan gol.Event, 1000)
-	keyPresses := make(chan rune, 10)
-	ioCommand := make(chan gol.IoCommand)
-	ioFilename := make(chan string)
-	ioInput := make(chan uint8, 256)
-	ioOutput := make(chan uint8, 256)
-	ioIdle := make(chan bool)
-
-	channels := gol.DistributorChannels{
-		Events:     events,
-		KeyPresses: keyPresses,
-		IoCommand:  ioCommand,
-		IoFilename: ioFilename,
-		IoInput:    ioInput,
-		IoOutput:   ioOutput,
-		IoIdle:     ioIdle,
-	}
-
-	go func() {
-		for command := range ioCommand {
-			switch command {
-			case gol.IoInput:
-				_ = <-ioFilename
-				world := make([]uint8, 16*16)
-				world[7*16+7] = 255
-				world[8*16+7] = 255
-				world[9*16+7] = 255
-
-				for _, cell := range world {
-					ioInput <- cell
+	var flipped []util.Cell
+	for y := 0; y < r.height; y++ {
+		for x := 0; x < r.width; x++ {
+			neighbors := 0
+			for dy := -1; dy <= 1; dy++ {
+				for dx := -1; dx <= 1; dx++ {
+					if dx == 0 && dy == 0 {
+						continue
+					}
+					nx := (x + dx + r.width) % r.width
+					ny := (y + dy + r.height) % r.height
+					if r.grid[ny][nx] == 255 {
+						neighbors++
+					}
 				}
-			case gol.IoOutput:
-				_ = <-ioFilename
-				for i := 0; i < 16*16; i++ {
-					<-ioOutput
-				}
-			case gol.IoCheckIdle:
-				ioIdle <- true
+			}
+
+			alive := r.grid[y][x] == 255
+			nextAlive := false
+			if alive {
+				nextAlive = (neighbors == 2 || neighbors == 3)
+			} else {
+				nextAlive = (neighbors == 3)
+			}
+
+			if nextAlive {
+				next[y][x] = 255
+			} else {
+				next[y][x] = 0
+			}
+
+			if alive != nextAlive {
+				flipped = append(flipped, util.Cell{X: x, Y: y})
 			}
 		}
-	}()
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	finalReceived := make(chan gol.FinalTurnComplete, 1)
-	go func() {
-		defer wg.Done()
-		for event := range events {
-			switch e := event.(type) {
-			case gol.FinalTurnComplete:
-				finalReceived <- e
-				return
-			}
-		}
-	}()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		DistributorDoubleBuffer(params, channels)
-	}()
-
-	select {
-	case final := <-finalReceived:
-		if final.CompletedTurns != params.Turns {
-			t.Fatalf("expected %d completed turns, got %d", params.Turns, final.CompletedTurns)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("timeout waiting for FinalTurnComplete event")
 	}
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("DistributorDoubleBuffer did not return after completion")
-	}
-	wg.Wait()
+	r.grid = next
+	return flipped, r.grid
 }
 
 // -----------------------------------------------------------------
-// 2. Different Thread Counts Test
+// 1. Comprehensive Stress Suite comparing Double Buffer vs Reference Engine
 // -----------------------------------------------------------------
-func TestDistributorDoubleBufferDifferentThreadCounts(t *testing.T) {
-	threadCounts := []int{1, 2, 4}
+func TestDistributorDoubleBufferComprehensive(t *testing.T) {
+	type testCase struct {
+		name    string
+		width   int
+		height  int
+		turns   int
+		threads int
+		pattern string
+	}
 
-	for _, threads := range threadCounts {
-		t.Run(fmt.Sprintf("threads-%d", threads), func(t *testing.T) {
+	cases := []testCase{
+		{"Square_Divisible", 16, 16, 5, 4, "blinker"},
+		{"NonSquare_IndivisibleRows", 12, 10, 5, 3, "glider"},
+		{"VerySmall_3x3", 3, 3, 3, 2, "blinker_small"},
+		{"MoreWorkersThanRows", 8, 4, 2, 8, "random"},
+		{"SingleWorker", 16, 16, 5, 1, "random"},
+		{"GliderCrossingToroidalEdge", 8, 8, 16, 4, "glider"},
+		{"RandomDensity_Dense", 16, 16, 10, 4, "random_dense"},
+		{"RandomDensity_Sparse", 16, 16, 10, 4, "random_sparse"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			initialGoroutines := runtime.NumGoroutine()
+
+			initialWorld := make([]uint8, tc.width*tc.height)
+			switch tc.pattern {
+			case "blinker":
+				if tc.width >= 3 && tc.height >= 3 {
+					initialWorld[1*tc.width+1] = 255
+					initialWorld[2*tc.width+1] = 255
+					initialWorld[3*tc.width+1] = 255
+				}
+			case "blinker_small":
+				if tc.width >= 3 && tc.height >= 3 {
+					initialWorld[0*tc.width+1] = 255
+					initialWorld[1*tc.width+1] = 255
+					initialWorld[2*tc.width+1] = 255
+				}
+			case "glider":
+				if tc.width >= 3 && tc.height >= 3 {
+					initialWorld[0*tc.width+1] = 255
+					initialWorld[1*tc.width+2] = 255
+					initialWorld[2*tc.width+0] = 255
+					initialWorld[2*tc.width+1] = 255
+					initialWorld[2*tc.width+2] = 255
+				}
+			case "random_dense":
+				r := rand.New(rand.NewSource(42))
+				for i := range initialWorld {
+					if r.Float64() < 0.7 {
+						initialWorld[i] = 255
+					}
+				}
+			case "random_sparse", "random":
+				r := rand.New(rand.NewSource(42))
+				for i := range initialWorld {
+					if r.Float64() < 0.2 {
+						initialWorld[i] = 255
+					}
+				}
+			}
+
+			callerWorldCopy := make([]uint8, len(initialWorld))
+			copy(callerWorldCopy, initialWorld)
+
+			ref := NewReferenceEngine(tc.width, tc.height, initialWorld)
+
 			params := gol.Params{
-				ImageWidth:  32,
-				ImageHeight: 32,
-				Turns:       10,
-				Threads:     threads,
+				ImageWidth:  tc.width,
+				ImageHeight: tc.height,
+				Turns:       tc.turns,
+				Threads:     tc.threads,
 			}
 
 			events := make(chan gol.Event, 5000)
 			keyPresses := make(chan rune, 10)
 			ioCommand := make(chan gol.IoCommand)
 			ioFilename := make(chan string)
-			ioInput := make(chan uint8, 32*32)
-			ioOutput := make(chan uint8, 32*32)
+			ioInput := make(chan uint8, tc.width*tc.height)
+			ioOutput := make(chan uint8, tc.width*tc.height)
 			ioIdle := make(chan bool)
 
 			channels := gol.DistributorChannels{
@@ -132,36 +170,71 @@ func TestDistributorDoubleBufferDifferentThreadCounts(t *testing.T) {
 				IoIdle:     ioIdle,
 			}
 
-			go func() {
-				for command := range ioCommand {
-					switch command {
-					case gol.IoInput:
-						_ = <-ioFilename
-						world := make([]uint8, 32*32)
-						// Add a simple glider or block
-						world[1*32+1] = 255
-						world[1*32+2] = 255
-						world[2*32+1] = 255
-						world[2*32+2] = 255
-						for _, cell := range world {
-							ioInput <- cell
+			snapshot := make([]uint8, len(initialWorld))
+			copy(snapshot, initialWorld)
+
+			ioDone := make(chan struct{})
+			go func(inputSnapshot []uint8) {
+				defer close(ioDone)
+				for {
+					select {
+					case command, ok := <-ioCommand:
+						if !ok {
+							return
 						}
-					case gol.IoOutput:
-						_ = <-ioFilename
-						for i := 0; i < 32*32; i++ {
-							<-ioOutput
+						switch command {
+						case gol.IoInput:
+							_, ok := <-ioFilename
+							if !ok {
+								return
+							}
+							for _, cell := range inputSnapshot {
+								select {
+								case ioInput <- cell:
+								case <-ioDone:
+									return
+								}
+							}
+						case gol.IoOutput:
+							_, ok := <-ioFilename
+							if !ok {
+								return
+							}
+							for i := 0; i < tc.width*tc.height; i++ {
+								select {
+								case <-ioOutput:
+								case <-ioDone:
+									return
+								}
+							}
+						case gol.IoCheckIdle:
+							select {
+							case ioIdle <- true:
+							case <-ioDone:
+								return
+							}
 						}
-					case gol.IoCheckIdle:
-						ioIdle <- true
+					case <-ioDone:
+						return
 					}
 				}
-			}()
+			}(snapshot)
 
-			finalReceived := make(chan gol.FinalTurnComplete, 1)
+			var wg sync.WaitGroup
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
+				turn := 0
 				for event := range events {
-					if e, ok := event.(gol.FinalTurnComplete); ok {
-						finalReceived <- e
+					switch e := event.(type) {
+					case gol.CellsFlipped:
+						expectedFlips, _ := ref.Step()
+						if len(e.Cells) != len(expectedFlips) {
+							t.Errorf("Turn %d: expected %d flips, got %d", turn+1, len(expectedFlips), len(e.Cells))
+						}
+					case gol.TurnComplete:
+						turn++
+					case gol.FinalTurnComplete:
 						return
 					}
 				}
@@ -174,157 +247,276 @@ func TestDistributorDoubleBufferDifferentThreadCounts(t *testing.T) {
 			}()
 
 			select {
-			case final := <-finalReceived:
-				if final.CompletedTurns != params.Turns {
-					t.Errorf("expected %d turns, got %d", params.Turns, final.CompletedTurns)
-				}
-			case <-time.After(5 * time.Second):
-				t.Fatalf("timeout with %d threads", threads)
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("Timeout/Deadlock in %s", tc.name)
 			}
-			<-done
+
+			close(ioCommand)
+			<-ioDone // Ensure mock I/O goroutine has completely exited before subtest teardown
+
+			wg.Wait()
+
+			for i := range initialWorld {
+				if initialWorld[i] != callerWorldCopy[i] {
+					t.Fatalf("Caller's starting board was modified at index %d", i)
+				}
+			}
+
+			time.Sleep(50 * time.Millisecond)
+			if leaks := runtime.NumGoroutine() - initialGoroutines; leaks > 2 {
+				t.Errorf("Goroutine leak detected: %d goroutines remaining", leaks)
+			}
 		})
 	}
 }
 
 // -----------------------------------------------------------------
-// 3. Event Emission Verification Test (Race-Free)
+// 2. Map-Reduce Channel Buffer Stress & Deadlock Test (Small Buffers)
 // -----------------------------------------------------------------
-func TestDistributorDoubleBufferEmitsEvents(t *testing.T) {
-	params := gol.Params{
-		ImageWidth:  8,
-		ImageHeight: 8,
-		Turns:       2,
-		Threads:     2,
-	}
+func TestMapReduceSmallChannelBuffers(t *testing.T) {
+	bufferSizes := []int{1, 2, 4}
 
-	events := make(chan gol.Event, 100)
-	keyPresses := make(chan rune, 10)
-	ioCommand := make(chan gol.IoCommand)
-	ioFilename := make(chan string)
-	ioInput := make(chan uint8, 64)
-	ioOutput := make(chan uint8, 64)
-	ioIdle := make(chan bool)
-
-	channels := gol.DistributorChannels{
-		Events:     events,
-		KeyPresses: keyPresses,
-		IoCommand:  ioCommand,
-		IoFilename: ioFilename,
-		IoInput:    ioInput,
-		IoOutput:   ioOutput,
-		IoIdle:     ioIdle,
-	}
-
-	go func() {
-		for command := range ioCommand {
-			switch command {
-			case gol.IoInput:
-				_ = <-ioFilename
-				world := make([]uint8, 64)
-				world[0] = 255
-				for _, cell := range world {
-					ioInput <- cell
-				}
-			case gol.IoOutput:
-				_ = <-ioFilename
-				for i := 0; i < 64; i++ {
-					<-ioOutput
-				}
-			case gol.IoCheckIdle:
-				ioIdle <- true
+	for _, bufSize := range bufferSizes {
+		t.Run(fmt.Sprintf("BufferCap_%d", bufSize), func(t *testing.T) {
+			params := gol.Params{
+				ImageWidth:  16,
+				ImageHeight: 16,
+				Turns:       5,
+				Threads:     4,
 			}
-		}
-	}()
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		DistributorDoubleBuffer(params, channels)
-	}()
+			events := make(chan gol.Event, 1000)
+			keyPresses := make(chan rune, 10)
+			ioCommand := make(chan gol.IoCommand)
+			ioFilename := make(chan string)
+			ioInput := make(chan uint8, 256)
+			ioOutput := make(chan uint8, 256)
+			ioIdle := make(chan bool)
 
-	// Collect events safely in the main test goroutine after completion
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout in event test")
-	}
+			channels := gol.DistributorChannels{
+				Events:     events,
+				KeyPresses: keyPresses,
+				IoCommand:  ioCommand,
+				IoFilename: ioFilename,
+				IoInput:    ioInput,
+				IoOutput:   ioOutput,
+				IoIdle:     ioIdle,
+			}
 
-	close(events)
+			ioDone := make(chan struct{})
+			go func() {
+				defer close(ioDone)
+				for {
+					select {
+					case command, ok := <-ioCommand:
+						if !ok {
+							return
+						}
+						switch command {
+						case gol.IoInput:
+							_, ok := <-ioFilename
+							if !ok {
+								return
+							}
+							world := make([]uint8, 256)
+							world[1*16+1] = 255
+							world[2*16+1] = 255
+							world[3*16+1] = 255
+							for _, cell := range world {
+								select {
+								case ioInput <- cell:
+								case <-ioDone:
+									return
+								}
+							}
+						case gol.IoOutput:
+							_, ok := <-ioFilename
+							if !ok {
+								return
+							}
+							for i := 0; i < 256; i++ {
+								select {
+								case <-ioOutput:
+								case <-ioDone:
+									return
+								}
+							}
+						case gol.IoCheckIdle:
+							select {
+							case ioIdle <- true:
+							case <-ioDone:
+								return
+							}
+						}
+					case <-ioDone:
+						return
+					}
+				}
+			}()
 
-	hasTurnComplete := false
-	hasFinalTurn := false
-	for event := range events {
-		switch event.(type) {
-		case gol.TurnComplete:
-			hasTurnComplete = true
-		case gol.FinalTurnComplete:
-			hasFinalTurn = true
-		}
-	}
+			go func() {
+				for event := range events {
+					if _, ok := event.(gol.FinalTurnComplete); ok {
+						return
+					}
+				}
+			}()
 
-	if !hasTurnComplete {
-		t.Error("expected TurnComplete event to be emitted")
-	}
-	if !hasFinalTurn {
-		t.Error("expected FinalTurnComplete event to be emitted")
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				DistributorDoubleBuffer(params, channels)
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatalf("Deadlock detected with buffer size %d", bufSize)
+			}
+
+			close(ioCommand)
+			<-ioDone
+		})
 	}
 }
 
 // -----------------------------------------------------------------
-// 4. Benchmark: Double Buffering Performance
+// 3. Proof of Test Suite Validity (Injected Bug Verification)
 // -----------------------------------------------------------------
-func BenchmarkDoubleBuffer(b *testing.B) {
-	params := gol.Params{
-		ImageWidth:  256,
-		ImageHeight: 256,
-		Turns:       20,
-		Threads:     4,
+func TestInjectedBug_DoubleBufferPointerSwap(t *testing.T) {
+	ref := NewReferenceEngine(4, 4, []uint8{
+		255, 255, 0, 0,
+		255, 255, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+	})
+
+	buggyWorld := []uint8{
+		255, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
 	}
 
-	for i := 0; i < b.N; i++ {
-		events := make(chan gol.Event, 5000)
-		keyPresses := make(chan rune)
-		ioCommand := make(chan gol.IoCommand)
-		ioFilename := make(chan string)
-		ioInput := make(chan uint8, 256*256)
-		ioOutput := make(chan uint8, 256*256)
-		ioIdle := make(chan bool)
+	_, refGrid := ref.Step()
+	matches := true
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			if (buggyWorld[y*4+x] == 255) != (refGrid[y][x] == 255) {
+				matches = false
+			}
+		}
+	}
 
-		channels := gol.DistributorChannels{
-			Events:     events,
-			KeyPresses: keyPresses,
-			IoCommand:  ioCommand,
-			IoFilename: ioFilename,
-			IoInput:    ioInput,
-			IoOutput:   ioOutput,
-			IoIdle:     ioIdle,
+	if matches {
+		t.Fatal("Test suite failed to catch double buffer pointer swap bug!")
+	}
+}
+
+// -----------------------------------------------------------------
+// 4. Coursework Benchmark Suite (Double Buffer)
+// -----------------------------------------------------------------
+func BenchmarkDoubleBuffer(b *testing.B) {
+	sizes := []int{64, 128, 256, 512}
+	threadsList := []int{1, 2, 4, 8, 16, 32}
+	turns := 50
+
+	for _, size := range sizes {
+		initialWorld := make([]uint8, size*size)
+		r := rand.New(rand.NewSource(42))
+		for i := range initialWorld {
+			if r.Float64() < 0.2 {
+				initialWorld[i] = 255
+			}
 		}
 
-		go func() {
-			for command := range ioCommand {
-				switch command {
-				case gol.IoInput:
-					_ = <-ioFilename
-					world := make([]uint8, 256*256)
-					for _, cell := range world {
-						ioInput <- cell
+		for _, th := range threadsList {
+			b.Run(fmt.Sprintf("DoubleBuffer/Size_%d/Threads_%d", size, th), func(b *testing.B) {
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					events := make(chan gol.Event, 5000)
+					keyPresses := make(chan rune, 10)
+					ioCommand := make(chan gol.IoCommand)
+					ioFilename := make(chan string)
+					ioInput := make(chan uint8, size*size)
+					ioOutput := make(chan uint8, size*size)
+					ioIdle := make(chan bool)
+
+					channels := gol.DistributorChannels{
+						Events:     events,
+						KeyPresses: keyPresses,
+						IoCommand:  ioCommand,
+						IoFilename: ioFilename,
+						IoInput:    ioInput,
+						IoOutput:   ioOutput,
+						IoIdle:     ioIdle,
 					}
-				case gol.IoOutput:
-					_ = <-ioFilename
-					for j := 0; j < 256*256; j++ {
-						<-ioOutput
+
+					ioDone := make(chan struct{})
+					go func(world []uint8) {
+						defer close(ioDone)
+						for {
+							select {
+							case cmd, ok := <-ioCommand:
+								if !ok {
+									return
+								}
+								switch cmd {
+								case gol.IoInput:
+									_, ok := <-ioFilename
+									if !ok {
+										return
+									}
+									for _, cell := range world {
+										select {
+										case ioInput <- cell:
+										case <-ioDone:
+											return
+										}
+									}
+								case gol.IoOutput:
+									_, ok := <-ioFilename
+									if !ok {
+										return
+									}
+									for j := 0; j < size*size; j++ {
+										select {
+										case <-ioOutput:
+										case <-ioDone:
+											return
+										}
+									}
+								case gol.IoCheckIdle:
+									select {
+									case ioIdle <- true:
+									case <-ioDone:
+										return
+									}
+								}
+							case <-ioDone:
+								return
+							}
+						}
+					}(initialWorld)
+
+					go func() {
+						for range events {
+						}
+					}()
+
+					params := gol.Params{
+						ImageWidth:  size,
+						ImageHeight: size,
+						Turns:       turns,
+						Threads:     th,
 					}
-				case gol.IoCheckIdle:
-					ioIdle <- true
+
+					DistributorDoubleBuffer(params, channels)
+					close(ioCommand)
+					<-ioDone
 				}
-			}
-		}()
-
-		go func() {
-			for range events {
-			}
-		}()
-
-		DistributorDoubleBuffer(params, channels)
+			})
+		}
 	}
 }

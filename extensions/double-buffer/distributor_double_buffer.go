@@ -168,4 +168,17 @@ func DistributorDoubleBuffer(p gol.Params, c gol.DistributorChannels) {
 		CompletedTurns: p.Turns,
 		Alive:          alive,
 	}
+
+	// 5. Request I/O Output for the final board state
+	c.IoCommand <- gol.IoOutput
+	c.IoFilename <- fmt.Sprintf("%dx%dx%d", p.ImageWidth, p.ImageHeight, p.Turns)
+	for y := 0; y < p.ImageHeight; y++ {
+		for x := 0; x < p.ImageWidth; x++ {
+			c.IoOutput <- source[y][x]
+		}
+	}
+
+	// 6. Check Idle State to ensure clean shutdown
+	c.IoCommand <- gol.IoCheckIdle
+	<-c.IoIdle
 }
