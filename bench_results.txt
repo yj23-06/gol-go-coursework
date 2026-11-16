@@ -1,0 +1,23 @@
+goos: darwin
+goarch: arm64
+pkg: uk.ac.bris.cs/gameoflife/extensions/double-buffer
+cpu: Apple M5
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_1-10         	     336	   3096681 ns/op	 2074296 B/op	    1863 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_1-10         	     384	   3134100 ns/op	 2074228 B/op	    1863 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_1-10         	     384	   3235347 ns/op	 2074179 B/op	    1863 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_1-10         	     381	   3257122 ns/op	 2074215 B/op	    1863 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_1-10         	     349	   3174046 ns/op	 2074236 B/op	    1863 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_1-10         	     368	   3176523 ns/op	 2074156 B/op	    1863 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_1-10         	     355	   3277538 ns/op	 2074256 B/op	    1863 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_1-10         	     362	   3358058 ns/op	 2074147 B/op	    1863 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_1-10         	     361	   3321437 ns/op	 2074155 B/op	    1863 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_1-10         	     367	   3291472 ns/op	 2074150 B/op	    1863 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_2-10         	     532	   2246368 ns/op	 2478772 B/op	    2394 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_2-10         	     530	   2217048 ns/op	 2478741 B/op	    2394 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_2-10         	     582	   2247012 ns/op	 2478712 B/op	    2394 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_2-10         	     514	   2631949 ns/op	 2478920 B/op	    2394 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_2-10         	     507	   2350823 ns/op	 2479372 B/op	    2394 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_2-10         	     544	   2228251 ns/op	 2479094 B/op	    2394 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_2-10         	     506	   2339912 ns/op	 2479117 B/op	    2394 allocs/op
+BenchmarkDoubleBuffer/DoubleBuffer/Size_64/Threads_2-10         	signal: interrupt
+FAIL	uk.ac.bris.cs/gameoflife/extensions/double-buffer	33.647s
