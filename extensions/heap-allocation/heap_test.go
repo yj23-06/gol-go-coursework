@@ -12,11 +12,13 @@ import (
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
+// A simple Game of Life implementation used to check the heap allocation version.
 type ReferenceEngine struct {
 	width, height int
 	grid          [][]uint8
 }
 
+// Creates a reference engine using the starting board.
 func NewReferenceEngine(width, height int, initial []uint8) *ReferenceEngine {
 	grid := make([][]uint8, height)
 	for y := 0; y < height; y++ {
@@ -28,8 +30,11 @@ func NewReferenceEngine(width, height int, initial []uint8) *ReferenceEngine {
 	return &ReferenceEngine{width: width, height: height, grid: grid}
 }
 
+// Calculates one generation and returns the cells that changed along with the updated board.
 func (r *ReferenceEngine) Step() ([]util.Cell, [][]uint8) {
+	// Create a new board so that the current generation is not overwritten.
 	next := make([][]uint8, r.height)
+	// Count the live neighbours, including cells across the board edges.
 	for y := 0; y < r.height; y++ {
 		next[y] = make([]uint8, r.width)
 	}
@@ -50,6 +55,7 @@ func (r *ReferenceEngine) Step() ([]util.Cell, [][]uint8) {
 					}
 				}
 			}
+			// Apply the Game of Life rules to decide whether this cell survives.
 
 			alive := r.grid[y][x] == 255
 			nextAlive := false
@@ -64,7 +70,7 @@ func (r *ReferenceEngine) Step() ([]util.Cell, [][]uint8) {
 			} else {
 				next[y][x] = 0
 			}
-
+			// Record any cells that changed between generations.
 			if alive != nextAlive {
 				flipped = append(flipped, util.Cell{X: x, Y: y})
 			}
@@ -77,7 +83,11 @@ func (r *ReferenceEngine) Step() ([]util.Cell, [][]uint8) {
 // -----------------------------------------------------------------
 // Comprehensive Stress & Edge Case Test Suite for Heap Allocation
 // -----------------------------------------------------------------
+
+// Tests the heap implementation against the reference engine using different board sizes, patterns and numbers of workers.
 func TestDistributorHeapComprehensive(t *testing.T) {
+
+	// Define the board settings for each test case.
 	type testCase struct {
 		name    string
 		width   int
@@ -86,7 +96,7 @@ func TestDistributorHeapComprehensive(t *testing.T) {
 		threads int
 		pattern string
 	}
-
+	// These cases cover different worker counts, board sizes and starting patterns.
 	cases := []testCase{
 		{"Square_Divisible", 16, 16, 5, 4, "blinker"},
 		{"NonSquare_IndivisibleRows", 12, 10, 5, 3, "glider"},
@@ -98,11 +108,16 @@ func TestDistributorHeapComprehensive(t *testing.T) {
 		{"RandomDensity_Sparse", 16, 16, 10, 4, "random_sparse"},
 	}
 
+	// Run each case separately to make failures easier to identify.
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			// Record the number of goroutines before starting the test.
 			initialGoroutines := runtime.NumGoroutine()
 
+			// Set up the starting board.
 			initialWorld := make([]uint8, tc.width*tc.height)
+
+			// Use a fixed seed so random boards are the same every time.
 			switch tc.pattern {
 			case "blinker":
 				if tc.width >= 3 && tc.height >= 4 {
@@ -140,9 +155,11 @@ func TestDistributorHeapComprehensive(t *testing.T) {
 				}
 			}
 
+			// Keep a copy of the original board to check that it is not modified.
 			callerWorldCopy := make([]uint8, len(initialWorld))
 			copy(callerWorldCopy, initialWorld)
 
+			// Calculate the expected results using the reference engine.
 			ref := NewReferenceEngine(tc.width, tc.height, initialWorld)
 
 			params := gol.Params{
@@ -152,6 +169,7 @@ func TestDistributorHeapComprehensive(t *testing.T) {
 				Threads:     tc.threads,
 			}
 
+			// Set up the channels used by the distributor and mock I/O.
 			events := make(chan gol.Event, 5000)
 			keyPresses := make(chan rune, 10)
 			ioCommand := make(chan gol.IoCommand)
@@ -170,6 +188,7 @@ func TestDistributorHeapComprehensive(t *testing.T) {
 				IoIdle:     ioIdle,
 			}
 
+			// Mock the I/O goroutine by providing the starting board and handling output requests.
 			go func() {
 				for command := range ioCommand {
 					switch command {
@@ -189,6 +208,7 @@ func TestDistributorHeapComprehensive(t *testing.T) {
 				}
 			}()
 
+			// Listen for events and compare the reported cell changes with the reference engine.
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
@@ -207,12 +227,14 @@ func TestDistributorHeapComprehensive(t *testing.T) {
 				}
 			}()
 
+			// Run the distributor in a separate goroutine.
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
 				DistributorHeap(params, channels)
 			}()
 
+			// Stop the test if the distributor gets stuck.
 			select {
 			case <-done:
 			case <-time.After(10 * time.Second):
@@ -220,13 +242,13 @@ func TestDistributorHeapComprehensive(t *testing.T) {
 			}
 
 			wg.Wait()
-
+			// Check that the original input board has not been changed.
 			for i := range initialWorld {
 				if initialWorld[i] != callerWorldCopy[i] {
 					t.Fatalf("Caller's starting board was modified at index %d", i)
 				}
 			}
-
+			// Give any remaining goroutines time to finish before checking for leaks.
 			time.Sleep(50 * time.Millisecond)
 			if leaks := runtime.NumGoroutine() - initialGoroutines; leaks > 2 {
 				t.Errorf("Goroutine leak detected: %d goroutines remaining", leaks)
@@ -238,6 +260,7 @@ func TestDistributorHeapComprehensive(t *testing.T) {
 // -----------------------------------------------------------------
 // Proof of Test Suite Validity (Injected Bug Verification)
 // -----------------------------------------------------------------
+// Uses an intentionally incorrect board to check that the reference comparison can detect a difference.
 func TestInjectedBug_HeapPrematureMutation(t *testing.T) {
 	ref := NewReferenceEngine(4, 4, []uint8{
 		255, 255, 0, 0,
@@ -253,6 +276,7 @@ func TestInjectedBug_HeapPrematureMutation(t *testing.T) {
 		0, 0, 0, 0,
 	}
 
+	// Calculate what the board should look like after one generation.
 	_, refGrid := ref.Step()
 	matches := true
 	for y := 0; y < 4; y++ {
@@ -262,7 +286,7 @@ func TestInjectedBug_HeapPrematureMutation(t *testing.T) {
 			}
 		}
 	}
-
+	// The incorrect board should not match the reference result.
 	if matches {
 		t.Fatal("Test suite failed to catch injected memory mutation bug!")
 	}
@@ -271,11 +295,12 @@ func TestInjectedBug_HeapPrematureMutation(t *testing.T) {
 // -----------------------------------------------------------------
 // 3. Coursework Benchmark Suite (Heap Allocation)
 // -----------------------------------------------------------------
+// Measures performance with different board sizes and worker counts
 func BenchmarkHeap(b *testing.B) {
 	sizes := []int{64, 128, 256, 512}
 	threadsList := []int{1, 2, 4, 8, 16, 32}
 	turns := 50
-
+	// Generate a repeatable starting board for the benchmark.
 	for _, size := range sizes {
 		initialWorld := make([]uint8, size*size)
 		r := rand.New(rand.NewSource(42))
@@ -286,9 +311,11 @@ func BenchmarkHeap(b *testing.B) {
 		}
 
 		for _, th := range threadsList {
+			// Run the benchmark with each combination of board size and worker count.
 			b.Run(fmt.Sprintf("Heap/Size_%d/Threads_%d", size, th), func(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
+					// Set up the channels for the distributor.
 					events := make(chan gol.Event, 5000)
 					keyPresses := make(chan rune, 10)
 					ioCommand := make(chan gol.IoCommand)
@@ -306,7 +333,7 @@ func BenchmarkHeap(b *testing.B) {
 						IoOutput:   ioOutput,
 						IoIdle:     ioIdle,
 					}
-
+					// Mock the I/O goroutine so the benchmark does not need actual image files.
 					ioDone := make(chan struct{})
 					go func(world []uint8) {
 						defer close(ioDone)
@@ -365,7 +392,7 @@ func BenchmarkHeap(b *testing.B) {
 						Turns:       turns,
 						Threads:     th,
 					}
-
+					// Run the simulation and wait for the mock I/O goroutine to finish.
 					DistributorHeap(params, channels)
 					close(ioCommand)
 					<-ioDone
