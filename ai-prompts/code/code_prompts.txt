@@ -4,3 +4,47 @@
             - brief.txt (Project introduction)
             - All go files as txt except for test files.
 
+2.How do I wire up the ioFilename, ioOutput, and ioInput channels in Run() and distributorChannels?
+
+3.How do I loop through p.Turns and compute the next generation using toroidal wrapping?
+
+4.How do I create a worker function that processes a subset of rows for the game of life?
+
+5.How do I use a time.NewTicker to send an AliveCellsCount event every 2 seconds during execution?
+
+6.how do I send an ioOutput command to save the current world state as a PGM image?
+
+7.how do I listen to the keyPresses channel inside the distributor loop to handle pause, save, and quit commands?
+
+8.--- FAIL: TestKeyboard (20.69s)
+    --- PASS: TestKeyboard/p (5.37s)
+    --- FAIL: TestKeyboard/s (1.15s)
+    --- FAIL: TestKeyboard/q (0.85s)
+    --- FAIL: TestKeyboard/p+s (4.82s)
+    --- FAIL: TestKeyboard/p+q (8.51s)
+FAIL
+FAIL    uk.ac.bris.cs/gameoflife/tests  20.888s
+FAIL Why am I getting this error?
+
+
+9.How do I ensure all required SDL visualization events (CellFlipped for initial cells, CellsFlipped per turn, and TurnComplete) are correctly sent in the distributor without double-flipping cells?
+
+10.How do I send the initial CellFlipped events before sending StateChange Executing?
+
+11.Help me plan the implementation of a heap allocation approach for our concurrent Game of Life coursework, where each worker allocates fresh memory for its assigned rows on every iteration, processes the current world independently and returns its results through channels, while preserving the existing distributor's SDL events, keyboard controls, alive-cell ticker and PGM input/output functionality.
+
+12.I am placing distributor_heap.go into a separate extensions folder for my Go project, but it is throwing undefined errors for types like Params, distributorChannels, CellFlipped, StateChange, and functions like saveWorld and countNeighbours. Since all these files belong to package gol, how should I organize or structure my files in the extensions folder so that it correctly recognizes types and functions defined in the main gol package without compilation errors?
+
+13.Help me design a Go test for `DistributorHeap` that uses a small 16×16 grid and a known blinker pattern, mocks the I/O channels, collects events asynchronously and checks that the simulation completes correctly with a `FinalTurnComplete` event and no deadlocks.
+
+14.How do I extend `heap_test.go` with tests for different worker counts (1, 2 and 4) and event handling, checking that `DistributorHeap` completes without deadlocks and emits the expected `StateChange` and `FinalTurnComplete` events.
+
+15.Help me add a `BenchmarkHeapAllocation` benchmark to `heap_test.go` using a 256×256 grid, 20 turns and 4 threads, with mocked I/O handling and asynchronous event collection to measure the performance of `DistributorHeap` across repeated runs.
+
+16.Help me plan a double-buffering implementation for the Game of Life extension, focusing on reusing two pre-allocated boards, distributing horizontal strips across workers, handling toroidal boundaries correctly and swapping buffers after each turn while preserving event handling and thread safety.
+
+17.How do I create `double_buffer_test.go` with a correctness test and benchmark for `DistributorDoubleBuffer`, using mocked I/O, asynchronous event handling, timeout checks and standard Go benchmark metrics for execution time and memory allocations.
+
+18.Help me expand `double_buffer_test.go` with tests for different worker counts (1, 2 and 4) and lifecycle event handling, verifying that `DistributorDoubleBuffer` partitions rows correctly, synchronises workers and emits the expected `CellFlipped`, `TurnComplete` and `FinalTurnComplete` events.
+
+19.How do I design a map-reduce approach for the Game of Life extension, where workers identify and send flipped cell coordinates through a buffered channel, and a reducer applies the changes after the mapping phase while preserving board consistency, avoiding deadlocks and maintaining the existing SDL event functionality.
