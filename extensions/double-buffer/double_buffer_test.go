@@ -77,9 +77,7 @@ func (r *ReferenceEngine) Step() ([]util.Cell, [][]uint8) {
 	return flipped, r.grid
 }
 
-// -----------------------------------------------------------------
 // 1. Comprehensive Stress Suite comparing Double Buffer vs Reference Engine
-// -----------------------------------------------------------------
 // Tests the double buffer implementation against the reference engine.
 // It uses different board sizes, patterns and thread counts to check that the implementation works in a range of situations.
 func TestDistributorDoubleBufferComprehensive(t *testing.T) {
@@ -291,10 +289,7 @@ func TestDistributorDoubleBufferComprehensive(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------
 // 2. Map-Reduce Channel Buffer Stress & Deadlock Test (Small Buffers)
-// -----------------------------------------------------------------
-
 // Tests whether the distributor can handle small channel buffers without getting stuck.
 func TestMapReduceSmallChannelBuffers(t *testing.T) {
 	bufferSizes := []int{1, 2, 4}
@@ -408,9 +403,7 @@ func TestMapReduceSmallChannelBuffers(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------
 // 3. Proof of Test Suite Validity (Injected Bug Verification)
-// -----------------------------------------------------------------
 // This test uses an intentionally incorrect board to make sure the comparison catches a mismatch.
 func TestInjectedBug_DoubleBufferPointerSwap(t *testing.T) {
 	ref := NewReferenceEngine(4, 4, []uint8{
@@ -443,9 +436,7 @@ func TestInjectedBug_DoubleBufferPointerSwap(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------
-// 4. Coursework Benchmark Suite (Double Buffer)
-// -----------------------------------------------------------------
+// Benchmark Suite
 // Measures how the implementation performs with different board sizes and thread counts.
 func BenchmarkDoubleBuffer(b *testing.B) {
 	sizes := []int{64, 128, 256, 512}

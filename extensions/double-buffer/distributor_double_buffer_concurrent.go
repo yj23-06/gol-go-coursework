@@ -8,9 +8,9 @@ import (
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
-// DistributorDoubleBufferConcurrent runs the double-buffer simulation while
-// collecting worker flip lists concurrently with the workers.
+// DistributorDoubleBufferConcurrent runs the simulation and collects cell flips while workers are still running.
 func DistributorDoubleBufferConcurrent(p gol.Params, c gol.DistributorChannels) {
+	// Keep the current generation separate from the cells being written.
 	source := make([][]uint8, p.ImageHeight)
 	dest := make([][]uint8, p.ImageHeight)
 	for y := 0; y < p.ImageHeight; y++ {
@@ -21,6 +21,7 @@ func DistributorDoubleBufferConcurrent(p gol.Params, c gol.DistributorChannels) 
 	c.IoCommand <- gol.IoInput
 	c.IoFilename <- fmt.Sprintf("%dx%d", p.ImageWidth, p.ImageHeight)
 
+	// Load the starting board and report its live cells to the event consumer.
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {
 			source[y][x] = <-c.IoInput
@@ -41,6 +42,7 @@ func DistributorDoubleBufferConcurrent(p gol.Params, c gol.DistributorChannels) 
 		flippedChan := make(chan []util.Cell, p.Threads)
 		allFlippedChan := make(chan []util.Cell, 1)
 
+		// Drain worker results as they arrive, then return the combined flip list.
 		go func() {
 			var allFlipped []util.Cell
 			for flipped := range flippedChan {
@@ -49,6 +51,7 @@ func DistributorDoubleBufferConcurrent(p gol.Params, c gol.DistributorChannels) 
 			allFlippedChan <- allFlipped
 		}()
 
+		// Give each worker a row range, with the last worker taking any remainder.
 		rowsPerWorker := p.ImageHeight / p.Threads
 		for i := 0; i < p.Threads; i++ {
 			startY := i * rowsPerWorker
@@ -73,6 +76,7 @@ func DistributorDoubleBufferConcurrent(p gol.Params, c gol.DistributorChannels) 
 		close(flippedChan)
 		allFlipped := <-allFlippedChan
 
+		// Publish this turn's changes before marking the turn complete.
 		if len(allFlipped) > 0 {
 			c.Events <- gol.CellsFlipped{
 				CompletedTurns: turn + 1,
@@ -87,6 +91,7 @@ func DistributorDoubleBufferConcurrent(p gol.Params, c gol.DistributorChannels) 
 		source, dest = dest, source
 	}
 
+	// Report the final live cells and save the completed board.
 	var alive []util.Cell
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {

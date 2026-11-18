@@ -1,0 +1,12 @@
+1. Attached Files:
+    - benchmark_double_buffer
+    - benchmark_heap
+    - benchmark_map_reduce
+
+    "How do the attached files compare in terms of performance and efficiency? Please provide a detailed analysis of each benchmark, highlighting their strengths and weaknesses."
+
+2. How can i use  flags to compare cpu performance across different benchmarks? Please provide examples of specific flags that can be used to measure CPU usage, memory consumption, and execution time for each benchmark.
+
+3. Explain how to analyze worker scaling, channel buffer size, changing versus settled patterns, profiles, traces, and GC behavior.
+
+4. Turn the measurements and caveats into a bullet-point analysis. Highlight the key findings, potential bottlenecks, and areas for optimization in each benchmark. Also use facts and statistics to support the analysis.

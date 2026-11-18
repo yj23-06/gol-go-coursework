@@ -12,11 +12,13 @@ import (
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
+// ReferenceEngine provides a simple sequential version of the Life rules for tests.
 type ReferenceEngine struct {
 	width, height int
 	grid          [][]uint8
 }
 
+// NewReferenceEngine copies the flat starting board into a row-based grid.
 func NewReferenceEngine(width, height int, initial []uint8) *ReferenceEngine {
 	grid := make([][]uint8, height)
 	for y := 0; y < height; y++ {
@@ -28,6 +30,7 @@ func NewReferenceEngine(width, height int, initial []uint8) *ReferenceEngine {
 	return &ReferenceEngine{width: width, height: height, grid: grid}
 }
 
+// Step computes one generation and returns its flips and resulting grid.
 func (r *ReferenceEngine) Step() ([]util.Cell, [][]uint8) {
 	next := make([][]uint8, r.height)
 	for y := 0; y < r.height; y++ {
@@ -74,9 +77,7 @@ func (r *ReferenceEngine) Step() ([]util.Cell, [][]uint8) {
 	return flipped, r.grid
 }
 
-// -----------------------------------------------------------------
-// 1. Comprehensive Stress Suite comparing Map-Reduce vs Reference Engine
-// -----------------------------------------------------------------
+// TestDistributorMapReduceComprehensive checks several board shapes and patterns against the reference rules.
 func TestDistributorMapReduceComprehensive(t *testing.T) {
 	type testCase struct {
 		name    string
@@ -143,6 +144,7 @@ func TestDistributorMapReduceComprehensive(t *testing.T) {
 			callerWorldCopy := make([]uint8, len(initialWorld))
 			copy(callerWorldCopy, initialWorld)
 
+			// Keep a copy to verify the distributor leaves its input untouched.
 			ref := NewReferenceEngine(tc.width, tc.height, initialWorld)
 
 			params := gol.Params{
@@ -173,6 +175,7 @@ func TestDistributorMapReduceComprehensive(t *testing.T) {
 			snapshot := make([]uint8, len(initialWorld))
 			copy(snapshot, initialWorld)
 
+			// Mock the file I/O goroutine so the test can run without image files.
 			ioDone := make(chan struct{})
 			go func(inputSnapshot []uint8) {
 				defer close(ioDone)
@@ -220,6 +223,7 @@ func TestDistributorMapReduceComprehensive(t *testing.T) {
 				}
 			}(snapshot)
 
+			// Advance the reference when flips arrive and watch for the final event.
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
@@ -240,6 +244,7 @@ func TestDistributorMapReduceComprehensive(t *testing.T) {
 				}
 			}()
 
+			// Bound the run time so a deadlock fails instead of hanging the suite.
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
@@ -257,6 +262,7 @@ func TestDistributorMapReduceComprehensive(t *testing.T) {
 
 			wg.Wait()
 
+			// Check input preservation and look for goroutines left behind by the run.
 			for i := range initialWorld {
 				if initialWorld[i] != callerWorldCopy[i] {
 					t.Fatalf("Caller's starting board was modified at index %d", i)
@@ -271,9 +277,7 @@ func TestDistributorMapReduceComprehensive(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------
-// 2. Requirement #6: Small Channel Buffer Stress & Deadlock Test
-// -----------------------------------------------------------------
+// TestMapReduceSmallChannelBuffers checks that the simulation completes in the small-buffer test cases.
 func TestMapReduceSmallChannelBuffers(t *testing.T) {
 	bufferSizes := []int{1, 2, 4}
 
@@ -304,7 +308,9 @@ func TestMapReduceSmallChannelBuffers(t *testing.T) {
 				IoIdle:     ioIdle,
 			}
 
+			// Serve the distributor's I/O requests with a fixed test pattern.
 			ioDone := make(chan struct{})
+			// Consume events while the simulation runs.
 			go func() {
 				defer close(ioDone)
 				for {
@@ -363,6 +369,7 @@ func TestMapReduceSmallChannelBuffers(t *testing.T) {
 				}
 			}()
 
+			// Fail promptly if the simulation gets stuck.
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
@@ -381,9 +388,7 @@ func TestMapReduceSmallChannelBuffers(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------
-// 3. Proof of Test Suite Validity (Injected Bug Verification)
-// -----------------------------------------------------------------
+// TestInjectedBug_MapReducePrematureMutation checks that the reference distinguishes an incorrect update.
 func TestInjectedBug_MapReducePrematureMutation(t *testing.T) {
 	ref := NewReferenceEngine(4, 4, []uint8{
 		255, 255, 0, 0,
@@ -414,9 +419,7 @@ func TestInjectedBug_MapReducePrematureMutation(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------
-// 4. Coursework Benchmark Suite (Map-Reduce)
-// -----------------------------------------------------------------
+// BenchmarkMapReduce measures runtime across channel buffers, board sizes, and worker counts.
 func BenchmarkMapReduce(b *testing.B) {
 	bufferSizes := []int{0, 1, 16, 256, 1024}
 	sizes := []int{64, 128, 256, 512}
@@ -426,6 +429,7 @@ func BenchmarkMapReduce(b *testing.B) {
 	for _, bufferSize := range bufferSizes {
 		bufferSize := bufferSize
 		for _, size := range sizes {
+			// Use a seeded board so each configuration starts from the same workload.
 			initialWorld := make([]uint8, size*size)
 			r := rand.New(rand.NewSource(42))
 			for i := range initialWorld {
@@ -436,6 +440,7 @@ func BenchmarkMapReduce(b *testing.B) {
 
 			for _, th := range threadsList {
 				b.Run(fmt.Sprintf("Buffer_%d/Size_%d/Threads_%d", bufferSize, size, th), func(b *testing.B) {
+					// Set the package-level channel capacity for this benchmark case.
 					previousBufferSize := MapReduceChanBuffer
 					MapReduceChanBuffer = bufferSize
 					defer func() {
@@ -462,6 +467,7 @@ func BenchmarkMapReduce(b *testing.B) {
 							IoIdle:     ioIdle,
 						}
 
+						// Mock input/output handling so benchmark runs need no files.
 						ioDone := make(chan struct{})
 						go func(world []uint8) {
 							defer close(ioDone)
@@ -509,6 +515,7 @@ func BenchmarkMapReduce(b *testing.B) {
 							}
 						}(initialWorld)
 
+						// Drain events so event delivery does not block the benchmark.
 						go func() {
 							for range events {
 							}
@@ -521,6 +528,7 @@ func BenchmarkMapReduce(b *testing.B) {
 							Threads:     th,
 						}
 
+						// Time the full simulation, then wait for the mock I/O handler.
 						DistributorMapReduce(params, channels)
 						close(ioCommand)
 						<-ioDone

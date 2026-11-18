@@ -17,7 +17,7 @@ type heapStripResult struct {
 }
 
 func DistributorHeap(p gol.Params, c gol.DistributorChannels) {
-	// ---------- Load initial world ----------
+	// Create a 2D slice to store the world.
 	// Create the board and read the starting cell values from the I/O channel.
 	world := make([][]uint8, p.ImageHeight)
 	for y := range world {
@@ -49,8 +49,6 @@ func DistributorHeap(p gol.Params, c gol.DistributorChannels) {
 		CompletedTurns: turn,
 		NewState:       gol.Executing,
 	}
-
-	// ---------- Shared state for ticker ----------
 	//The mutex protects the board and turn counter when they are accessed by the ticker and the main simulation at the same time.
 	var mutex sync.RWMutex
 	completedTurns := 0
@@ -84,8 +82,6 @@ func DistributorHeap(p gol.Params, c gol.DistributorChannels) {
 	}()
 	// Divide the rows between the workers. The last worker handles any remaining rows.
 	rowsPerWorker := p.ImageHeight / p.Threads
-
-	// ---------- Main simulation ----------
 
 	// Keep running until all requested turns have been completed.
 	for turn < p.Turns {
@@ -182,8 +178,6 @@ func DistributorHeap(p gol.Params, c gol.DistributorChannels) {
 		}
 	}
 
-	// ---------- Finalise ----------
-
 	// Stop the ticker and send the final board information.
 	close(done)
 	ticker.Stop()
@@ -203,9 +197,6 @@ func DistributorHeap(p gol.Params, c gol.DistributorChannels) {
 	close(c.Events)
 }
 
-// ---------------------------------------------------------
-// Heap worker
-// ---------------------------------------------------------
 // Each worker calculates the next state of its assigned rows.
 // A new set of rows is allocated for every generation.
 func heapWorker(
@@ -255,10 +246,6 @@ func heapWorker(
 	}
 }
 
-// ---------------------------------------------------------
-// Pause handler
-// ---------------------------------------------------------
-
 // Handles keyboard input while the simulation is paused.
 func handlePauseHeap(
 	world [][]uint8,
@@ -291,10 +278,6 @@ func handlePauseHeap(
 		}
 	}
 }
-
-// ---------------------------------------------------------
-// Utility
-// ---------------------------------------------------------
 
 // Returns the coordinates of all currently living cells.
 func getAliveCells(world [][]uint8) []util.Cell {

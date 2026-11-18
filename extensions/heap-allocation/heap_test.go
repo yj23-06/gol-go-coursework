@@ -80,10 +80,6 @@ func (r *ReferenceEngine) Step() ([]util.Cell, [][]uint8) {
 	return flipped, r.grid
 }
 
-// -----------------------------------------------------------------
-// Comprehensive Stress & Edge Case Test Suite for Heap Allocation
-// -----------------------------------------------------------------
-
 // Tests the heap implementation against the reference engine using different board sizes, patterns and numbers of workers.
 func TestDistributorHeapComprehensive(t *testing.T) {
 
@@ -257,9 +253,7 @@ func TestDistributorHeapComprehensive(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------
 // Proof of Test Suite Validity (Injected Bug Verification)
-// -----------------------------------------------------------------
 // Uses an intentionally incorrect board to check that the reference comparison can detect a difference.
 func TestInjectedBug_HeapPrematureMutation(t *testing.T) {
 	ref := NewReferenceEngine(4, 4, []uint8{
@@ -292,9 +286,7 @@ func TestInjectedBug_HeapPrematureMutation(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------
-// 3. Coursework Benchmark Suite (Heap Allocation)
-// -----------------------------------------------------------------
+// Benchmark Suite
 // Measures performance with different board sizes and worker counts
 func BenchmarkHeap(b *testing.B) {
 	sizes := []int{64, 128, 256, 512}
